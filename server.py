@@ -13,6 +13,7 @@ from email.policy import default
 
 
 DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parent / "uploaded_games"
+RESOLVED_DEFAULT_UPLOAD_DIR = DEFAULT_UPLOAD_DIR.resolve()
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 
@@ -95,7 +96,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 
     @property
     def upload_dir(self) -> Path:
-        return getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR.resolve())
+        return getattr(self.server, "upload_dir", RESOLVED_DEFAULT_UPLOAD_DIR)
 
     def _parse_uploaded_file(self, content_type: str) -> tuple[str, bytes] | None:
         raw_content_length = self.headers.get("Content-Length")
@@ -106,7 +107,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             raise InvalidUploadBodyError from error
         if content_length <= 0:
-            return None
+            raise InvalidUploadBodyError
         if content_length > self.max_upload_size:
             raise UploadTooLargeError
 
