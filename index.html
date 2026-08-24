@@ -88,18 +88,26 @@
   .rec{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;
        text-align:right;margin-top:5px;color:#b9a6d6}
   .rec b{color:var(--gold)}
-    .plays{display:flex;flex-wrap:wrap;gap:clamp(6px,1vmin,11px);justify-content:center;margin:0 0 var(--cardgap)}
-  .card .eyebrow{font-size:clamp(10px,1.55vmin,15px)}
-  .card .btn{font-size:clamp(13px,1.95vmin,19px);border-radius:12px;
-             padding:clamp(10px,1.5vmin,15px) clamp(17px,2.6vmin,32px)}
-  .playchip{display:flex;align-items:center;gap:6px;font-size:clamp(10.5px,1.6vmin,15px);font-weight:700;
+    .plays{display:flex;flex-wrap:wrap;gap:max(4px,calc(clamp(6px,1vmin,11px)*var(--ts)));
+           justify-content:center;margin:0 0 var(--cardgap)}
+  .card .eyebrow{font-size:max(9px,calc(clamp(10px,1.55vmin,15px)*var(--ts)))}
+  .card .btn{font-size:max(12px,calc(clamp(13px,1.95vmin,19px)*var(--ts)));border-radius:12px;
+             padding:max(7px,calc(clamp(10px,1.5vmin,15px)*var(--ts)))
+                     max(13px,calc(clamp(17px,2.6vmin,32px)*var(--ts)))}
+  .playchip{display:flex;align-items:center;gap:6px;font-weight:700;
+            font-size:max(10px,calc(clamp(10.5px,1.6vmin,15px)*var(--ts)));
             background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.17);
-            border-radius:9px;padding:clamp(4px,.75vmin,9px) clamp(9px,1.35vmin,16px);white-space:nowrap}
-  .playchip i{font-style:normal;font-size:clamp(13px,2vmin,19px);color:var(--gold);line-height:1}
-  .howto{font-size:clamp(12px,1.85vmin,17px);color:#d6c6ef;background:rgba(255,209,102,.10);
+            border-radius:9px;white-space:nowrap;
+            padding:max(3px,calc(clamp(4px,.75vmin,9px)*var(--ts)))
+                    max(7px,calc(clamp(9px,1.35vmin,16px)*var(--ts)))}
+  .playchip i{font-style:normal;color:var(--gold);line-height:1;
+              font-size:max(12px,calc(clamp(13px,2vmin,19px)*var(--ts)))}
+  .howto{color:#d6c6ef;background:rgba(255,209,102,.10);
+         font-size:max(11px,calc(clamp(12px,1.85vmin,17px)*var(--ts)));
          border:1px solid rgba(255,209,102,.30);border-radius:12px;
-         padding:clamp(8px,1.35vmin,15px) clamp(12px,1.9vmin,22px);
-         margin:0 auto var(--cardgap);max-width:74ch;line-height:1.45}
+         padding:max(5px,calc(clamp(8px,1.35vmin,15px)*var(--ts)))
+                 max(9px,calc(clamp(12px,1.9vmin,22px)*var(--ts)));
+         margin:0 auto var(--cardgap);max-width:74ch;line-height:1.4}
   .howto b{color:var(--gold)}
   .lvl.win{border-color:rgba(120,240,170,.75)}
   .lvl.loss{opacity:.62}
@@ -116,50 +124,88 @@
   .btn:hover{filter:brightness(1.08)}
   .btn:focus-visible{outline:3px solid var(--prism);outline-offset:3px}
   .iconbtn{width:36px;height:36px;padding:0;display:grid;place-items:center;font-size:15px}
-  .veil{position:absolute;inset:0;display:none;place-items:center;pointer-events:auto;z-index:5;padding:20px;
+  .veil{position:absolute;inset:0;display:none;place-items:center;pointer-events:auto;z-index:5;
+        padding:clamp(8px,2.2vmin,22px);
         background:radial-gradient(circle at 50% 42%,rgba(40,24,66,.88),rgba(8,4,16,.96))}
   .veil.on{display:grid}
-  .card{text-align:center;max-width:min(940px,94%);width:100%;--cardgap:14px}
-  .card h1{font-family:'Fraunces',serif;font-weight:900;font-size:clamp(34px,7.4vmin,82px);
+  /* --ts is the type scale. fitCard measures the room and steps it down in tiers.
+     Every size below is wrapped in max() so the scale can never drive text under
+     its legible floor; when shrinking runs out, the tiers hide rows instead. */
+  .card{text-align:center;max-width:min(940px,94%);width:100%;--cardgap:14px;--ts:1}
+  .card[data-tier="1"]{--ts:.90}
+  .card[data-tier="2"]{--ts:.82}
+  .card[data-tier="3"]{--ts:.76}
+  .card[data-tier="4"]{--ts:.70}
+  /* What each tier gives up, in the order it hurts least. The how-to box holds the
+     one rule a new player cannot guess, so it survives every tier. Phone landscape,
+     the tightest case that has to work, settles at tier 2. */
+  .card:is([data-tier="2"],[data-tier="3"],[data-tier="4"]) .plays{display:none}
+  .card:is([data-tier="3"],[data-tier="4"]) .lede{display:none}
+  .card[data-tier="4"] :is(.subtitle,.lvl small){display:none}
+  .card h1{font-family:'Fraunces',serif;font-weight:900;
+           font-size:max(20px,calc(clamp(34px,7.4vmin,82px)*var(--ts)));
            line-height:.95;letter-spacing:-.02em}
   .card h1 em{font-style:normal;color:var(--gold)}
   .card p{color:#cbb7e6;margin:0 auto var(--cardgap);max-width:70ch;
-          font-size:clamp(14px,2.05vmin,20px);line-height:1.55}
+          font-size:max(11.5px,calc(clamp(14px,2.05vmin,20px)*var(--ts)));line-height:1.5}
   .card h1{margin:0 0 var(--cardgap)}
   .card .subtitle{margin:0 0 var(--cardgap);letter-spacing:.28em;opacity:.95}
   /* the trailing track after the last letter would shove the word off-centre,
      so the same amount is given back as indent */
   .card h1.gametitle{text-transform:uppercase;letter-spacing:.115em;text-indent:.115em}
-  .stars{font-size:clamp(30px,5.4vmin,52px);letter-spacing:10px;margin:0 0 var(--cardgap);color:var(--gold)}
-  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:clamp(7px,1.1vmin,13px);margin:0}
+  .stars{font-size:max(20px,calc(clamp(30px,5.4vmin,52px)*var(--ts)));
+         letter-spacing:calc(10px*var(--ts));margin:0 0 var(--cardgap);color:var(--gold)}
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);
+        gap:max(4px,calc(clamp(7px,1.1vmin,13px)*var(--ts)));margin:0}
   .card{max-height:calc(100% - 8px);overflow-y:auto;overscroll-behavior:contain}
   .lvl{border-radius:12px;border:1px solid rgba(255,255,255,.22);
        color:#f6eeff;cursor:pointer;display:flex;flex-direction:column;align-items:center;
-       justify-content:center;gap:clamp(2px,.35vmin,5px);
-       padding:clamp(5px,.9vmin,11px) 4px;overflow:hidden}
-  .lvl b{font-family:'Fraunces',serif;font-weight:900;font-size:clamp(17px,2.7vmin,30px);line-height:1}
-  .lvl small{font-size:clamp(8px,1.3vmin,13px);letter-spacing:.06em;opacity:.85;text-align:center;line-height:1.18}
-  .lvl i{font-style:normal;font-size:clamp(9px,1.4vmin,14px);letter-spacing:2px;color:var(--gold)}
+       justify-content:center;gap:max(1px,calc(clamp(2px,.35vmin,5px)*var(--ts)));
+       padding:max(3px,calc(clamp(5px,.9vmin,11px)*var(--ts))) 4px;overflow:hidden}
+  .lvl b{font-family:'Fraunces',serif;font-weight:900;
+         font-size:max(13px,calc(clamp(17px,2.7vmin,30px)*var(--ts)));line-height:1}
+  .lvl small{font-size:max(7.5px,calc(clamp(8px,1.3vmin,13px)*var(--ts)));
+             letter-spacing:.06em;opacity:.85;text-align:center;line-height:1.15}
+  .lvl i{font-style:normal;font-size:max(8px,calc(clamp(9px,1.4vmin,14px)*var(--ts)));
+         letter-spacing:2px;color:var(--gold)}
   .lvl{transition:transform .12s ease, filter .12s ease}
   .lvl:hover{transform:translateY(-2px);filter:brightness(1.12)}
   .lvl:active{transform:translateY(0) scale(.97)}
   .lvl:focus-visible{outline:3px solid var(--prism);outline-offset:2px}
   .actions{display:flex;gap:clamp(10px,1.5vmin,16px);justify-content:center;flex-wrap:wrap;
             margin:var(--cardgap) 0 0}
-  /* phone landscape has ~390px of height for the whole card: trim, do not scroll */
-  @media (max-height:560px){
-    .card h1{font-size:clamp(26px,6vmin,40px)}
-    .card p{font-size:12.5px;line-height:1.42}
-    .howto{font-size:11.5px;padding:6px 11px;line-height:1.4}
-    .plays{display:none;margin:0}
-    .grid{gap:5px}
-    .card .btn{padding:8px 16px;font-size:12.5px}
-    .stars{font-size:26px}
+  /* No viewport-height rule here. The stage is aspect-locked at 7:4, so on a phone
+     held upright the card gets roughly 180px of height while the viewport reports
+     844px. A media query cannot see that box; fitCard measures it and sets the tier. */
+
+  /* A 7:4 stage on an upright phone is about 220px tall, which is too small to
+     aim a slingshot in, let alone read a schedule. Rather than shrink the card
+     into that, ask for the phone the other way round. Tablets clear the width
+     test and are left alone. */
+  #rotate{position:fixed;inset:0;z-index:60;display:none;place-items:center;text-align:center;
+          padding:28px;background:radial-gradient(circle at 50% 45%,#1d1236,#07040e 78%)}
+  #rotate .glyphbox{width:46px;height:76px;margin:0 auto 30px;border-radius:9px;
+          border:2px solid rgba(255,209,102,.6);position:relative;
+          animation:turn 2.8s ease-in-out infinite}
+  /* a screen needs a home button to read as a phone rather than a rectangle */
+  #rotate .glyphbox::after{content:'';position:absolute;left:50%;bottom:6px;
+          width:15px;height:2px;border-radius:2px;background:rgba(255,209,102,.6);
+          transform:translateX(-50%)}
+  #rotate h2{font-family:'Fraunces',Georgia,serif;font-weight:900;font-size:26px;
+             line-height:1.1;margin-bottom:14px}
+  #rotate h2 em{font-style:normal;color:var(--gold)}
+  #rotate p{color:#cbb7e6;font-size:14.5px;line-height:1.5;max-width:30ch;margin:0 auto}
+  @keyframes turn{
+    0%,38%{transform:rotate(0deg)}
+    62%,100%{transform:rotate(90deg)}
+  }
+  @media (pointer:coarse) and (orientation:portrait) and (max-width:600px){
+    #rotate{display:grid}
   }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   @media (max-width:560px){.power{min-width:0}.pname{font-size:12px}.phint{display:none}
     .venue{display:none}
-    .plate{padding:6px 10px}.grid{grid-template-columns:repeat(4,1fr)}}
+    .plate{padding:6px 10px}}
 </style>
 </head>
 <body>
@@ -192,6 +238,13 @@
       d="M0 350 L180 296 L320 348 L470 292 L620 352 L780 300 L940 356 L1100 298
          L1260 350 L1420 302 L1600 352 L1600 420 L0 420 Z"/>
   </svg>
+</div>
+<div id="rotate">
+  <div>
+    <div class="glyphbox" aria-hidden="true"></div>
+    <h2>Turn your phone <em>sideways</em></h2>
+    <p>Pounce is played on a wide field. Rotate to landscape and the game starts.</p>
+  </div>
 </div>
 <div id="stage">
   <canvas id="c"></canvas>
@@ -1387,7 +1440,37 @@ function finish(won){
 /* Card content ranges from a short win card to the full schedule, and the stage is
    aspect-locked, so the room available swings from ~350px to ~780px. A fixed rhythm
    either cramps the big screens or pushes the button off the small ones, so the gap
-   is measured: lay the card out flat, see what is left over, and share it out. */
+   is measured: lay the card out flat, see what is left over, and share it out.
+
+   The share is not equal. A title and its subtitle read as one object and want to
+   stay close, while the schedule grid and the kickoff button need real air above
+   them to register as separate moves. Each row carries a weight, and the leftover
+   room is divided in those proportions. */
+const GAP_WEIGHT = [
+  ['h1.gametitle', 0.34],  /* game title to its subtitle: one unit, keep it tight */
+  ['.subtitle',    1.50],  /* end of the masthead, start of the body copy */
+  ['.eyebrow',     0.34],  /* result kicker sits directly on the headline */
+  ['h1',           0.90],
+  ['.stars',       1.25],
+  ['.lede',        1.15],
+  ['.howto',       0.70],  /* the chip row explains the box above it */
+  ['.plays',       1.60],
+  ['.recline',     1.40],
+  ['.grid',        1.50],  /* schedule to button */
+];
+const GAP_MIN = 4;      /* absolute floor: below this the rows read as one block */
+const GAP_WANT = 20;    /* below this, shed a tier instead of squeezing further */
+const GAP_MAX = 40;
+const TIERS = ['', '1', '2', '3', '4'];
+function gapWeight(el){
+  for (const [sel,w] of GAP_WEIGHT) if (el.matches(sel)) return w;
+  return 1;
+}
+/* Step down the tiers until the spacing comes out comfortable. Each tier shrinks
+   the type a little and, past the second, starts hiding the rows that carry the
+   least: the chip row, then the lede, then the how-to box and the team names.
+   The last tier is accepted whatever it measures, and the card scrolls only if
+   even that does not fit. */
 function fitCard(){
   const card = document.getElementById('card'), veil = document.getElementById('veil');
   if (!card || !veil || !card.children.length) return;
@@ -1396,25 +1479,28 @@ function fitCard(){
   const prevMax = card.style.maxHeight, prevOv = card.style.overflowY;
   card.style.maxHeight = 'none'; card.style.overflowY = 'visible';
   card.style.setProperty('--cardgap', '0px');
-  const visible = ()=> [...card.children].filter(el=>getComputedStyle(el).display !== 'none');
-  const plays = card.querySelector('.plays');
-  if (plays) plays.style.display = '';
-  let bare = card.getBoundingClientRect().height;
-  let slots = Math.max(1, visible().length - 1);
-  /* When the room is genuinely tight, drop the chip row rather than squeeze every
-     gap to nothing: the how-to line above it still explains the plays. */
-  if (plays && (avail - bare) < slots * 8){
-    plays.style.display = 'none';
-    bare = card.getBoundingClientRect().height;
-    slots = Math.max(1, visible().length - 1);
-  }
-  card.style.maxHeight = prevMax; card.style.overflowY = prevOv;
+  [...card.children].forEach(el=>el.style.marginBottom = '0px');
   /* the card's own max-height is calc(100% - 8px), so the real ceiling sits below
-     the room measured here; gaps are floored to whole pixels so seven fractional
-     margins cannot accumulate past it */
-  const ceiling = avail - 8;
-  const gap = Math.max(3, Math.min(64, Math.floor((ceiling - bare - 4) / slots)));
-  card.style.setProperty('--cardgap', gap + 'px');
+     the room measured here */
+  const ceiling = avail - 12;
+
+  let best = null;
+  for (const tier of TIERS){
+    if (tier) card.dataset.tier = tier; else delete card.dataset.tier;
+    const bare = card.getBoundingClientRect().height;
+    /* the final row needs no trailing gap, so it is dropped from the split */
+    const rows = [...card.children].filter(el=>getComputedStyle(el).display !== 'none');
+    rows.pop();
+    const weight = rows.reduce((s,el)=>s + gapWeight(el), 0) || 1;
+    const unit = (ceiling - bare) / weight;
+    best = {tier, rows, weight, unit};
+    if (unit >= GAP_WANT) break;
+  }
+  if (best.tier) card.dataset.tier = best.tier; else delete card.dataset.tier;
+  card.style.maxHeight = prevMax; card.style.overflowY = prevOv;
+  /* gaps are floored to whole pixels so the margins cannot accumulate past the ceiling */
+  const unit = Math.max(GAP_MIN, Math.min(GAP_MAX, best.unit));
+  best.rows.forEach(el=>el.style.marginBottom = Math.floor(unit * gapWeight(el)) + 'px');
 }
 const showVeil = ()=>document.getElementById('veil').classList.add('on');
 const hideVeil = ()=>document.getElementById('veil').classList.remove('on');
@@ -5152,9 +5238,12 @@ document.addEventListener('fullscreenchange', ()=>{
 if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen))
   fullBtn.style.display = 'none';
 
-/* the stage is sized in viewport units, so re-measure whenever that changes */
-addEventListener('orientationchange', ()=>setTimeout(resize, 120));
-if (window.visualViewport) visualViewport.addEventListener('resize', ()=>setTimeout(resize, 60));
+/* The stage is sized in viewport units, so re-measure whenever that changes. The
+   card has to be re-fitted alongside it: turning the phone to landscape is exactly
+   the moment its tier should change, and the canvas resize alone would not do it. */
+const remeasure = ()=>{ resize(); fitCard(); };
+addEventListener('orientationchange', ()=>setTimeout(remeasure, 120));
+if (window.visualViewport) visualViewport.addEventListener('resize', ()=>setTimeout(remeasure, 60));
 
 /* ---------- boot ---------- */
 resize();
