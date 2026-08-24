@@ -101,7 +101,10 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         raw_content_length = self.headers.get("Content-Length")
         if raw_content_length is None:
             raise MissingContentLengthError
-        content_length = int(raw_content_length)
+        try:
+            content_length = int(raw_content_length)
+        except ValueError as error:
+            raise InvalidUploadBodyError from error
         if content_length <= 0:
             return None
         if content_length > self.max_upload_size:

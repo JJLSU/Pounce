@@ -1,5 +1,6 @@
 import http.client
 import os
+import socket
 import tempfile
 import threading
 import unittest
@@ -42,6 +43,17 @@ class ServerTests(unittest.TestCase):
         data = response.read()
         connection.close()
         return response, data
+
+    def raw_request(self, request_text: bytes) -> bytes:
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as connection:
+            connection.sendall(request_text)
+            chunks = []
+            while True:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return b"".join(chunks)
 
     def test_upload_redirects_and_serves_uploaded_game(self) -> None:
         game_html = b"<!doctype html><html><body><h1>Pounce!</h1></body></html>"
@@ -97,6 +109,37 @@ class ServerTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status, 413)
+
+    def test_upload_rejects_missing_content_length(self) -> None:
+        boundary, body = build_multipart("game.html", b"<html>missing length</html>")
+
+        response = self.raw_request(
+            (
+                "POST /upload HTTP/1.1\r\n"
+                "Host: 127.0.0.1\r\n"
+                f"Content-Type: multipart/form-data; boundary={boundary}\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode("utf-8")
+            + body
+        )
+
+        self.assertIn(b"411 Content-Length header is required", response)
+
+    def test_upload_rejects_invalid_content_length(self) -> None:
+        boundary, body = build_multipart("game.html", b"<html>bad length</html>")
+
+        response = self.raw_request(
+            (
+                "POST /upload HTTP/1.1\r\n"
+                "Host: 127.0.0.1\r\n"
+                f"Content-Type: multipart/form-data; boundary={boundary}\r\n"
+                "Content-Length: nope\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode("utf-8")
+            + body
+        )
+
+        self.assertIn(b"400 Invalid upload body", response)
 
     @unittest.skipIf(os.name == "nt", "symlink permissions vary on Windows")
     def test_server_does_not_follow_symlinked_html_files(self) -> None:
