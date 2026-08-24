@@ -84,18 +84,25 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         return getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR)
 
     def _parse_uploaded_file(self, content_type: str) -> tuple[str, bytes] | None:
-        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_content_length = self.headers.get("Content-Length")
+        if raw_content_length is None:
+            return None
+        content_length = int(raw_content_length)
         if content_length <= 0:
             return None
         if content_length > self.max_upload_size:
             raise UploadTooLargeError
+
+        body = self.rfile.read(content_length)
+        if len(body) != content_length or len(body) > self.max_upload_size:
+            return None
 
         message = BytesParser(policy=default).parsebytes(
             (
                 f"Content-Type: {content_type}\r\n"
                 "MIME-Version: 1.0\r\n\r\n"
             ).encode("utf-8")
-            + self.rfile.read(content_length)
+            + body
         )
         if not message.is_multipart():
             return None
@@ -180,9 +187,10 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 
 def create_server(host: str = "127.0.0.1", port: int = 8000, upload_dir: Path | None = None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), GameRequestHandler)
-    server.upload_dir = upload_dir or DEFAULT_UPLOAD_DIR
+    configured_upload_dir = upload_dir or DEFAULT_UPLOAD_DIR
+    configured_upload_dir.mkdir(parents=True, exist_ok=True)
+    server.upload_dir = configured_upload_dir.resolve()
     server.max_upload_size = MAX_UPLOAD_SIZE
-    server.upload_dir.mkdir(parents=True, exist_ok=True)
     return server
 
 
@@ -191,7 +199,12 @@ def main() -> None:
     port = int(os.environ.get("POUNCE_PORT", "8000"))
     upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", DEFAULT_UPLOAD_DIR))
     server = create_server(host=host, port=port, upload_dir=upload_dir)
-    browser_host = "127.0.0.1" if host == "0.0.0.0" else host
+    if host == "0.0.0.0":
+        browser_host = "127.0.0.1"
+    elif host == "::":
+        browser_host = "[::1]"
+    else:
+        browser_host = host
     print(f"Serving uploaded games on http://{browser_host}:{port}")
     server.serve_forever()
 
