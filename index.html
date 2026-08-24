@@ -126,6 +126,13 @@
   .howto b{color:var(--gold)}
   .lvl.win{border-color:rgba(120,240,170,.75)}
   .lvl.loss{opacity:.62}
+  .lvl.chosen{box-shadow:0 0 0 2px rgba(255,255,255,.4) inset}
+  .teambar{display:flex;align-items:center;justify-content:center;gap:max(8px,calc(clamp(10px,1.5vmin,16px)*var(--ts)));
+           flex-wrap:wrap;margin:0 0 var(--cardgap)}
+  .teaminfo{display:flex;align-items:center;gap:7px;color:#cbb7e6;
+            font-size:max(11px,calc(clamp(12px,1.85vmin,16px)*var(--ts)))}
+  .teamdot{width:11px;height:11px;border-radius:50%;flex:none;
+           box-shadow:0 0 0 1px rgba(255,255,255,.35)}
   .power{display:flex;align-items:center;gap:11px;min-width:220px}
   .glyph{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:19px;
          background:linear-gradient(140deg,rgba(95,227,198,.28),rgba(255,143,196,.28));
@@ -156,6 +163,10 @@
   .card:is([data-tier="2"],[data-tier="3"],[data-tier="4"]) .plays{display:none}
   .card:is([data-tier="3"],[data-tier="4"]) .subtitle{display:none}
   .card[data-tier="4"] .lvl small{display:none}
+  /* the team grid's big letters are a state, and four states repeat (TN, AL, TX,
+     MS) — unlike the schedule grid's big letters, which are unique level numbers,
+     dropping the school name here would leave two buttons reading the same */
+  .card[data-tier="4"] #teamgrid.grid .lvl small{display:block}
   .card h1{font-family:'Fraunces',serif;font-weight:900;
            font-size:max(20px,calc(clamp(34px,7.4vmin,82px)*var(--ts)));
            line-height:.95;letter-spacing:-.02em}
@@ -737,7 +748,7 @@ const THEMES = {
       stone:{fill:'#9E1B32', line:'#560C1B', tex:'houndstooth'},
       glass:{fill:'rgba(253,208,35,.42)', line:'#FFE88A', tex:'stained'}
     },
-    grump:{body:'#8F8A92', dark:'#33303A', hat:'houndstooth'},
+    grump:{body:'#E8801F', dark:'#5C2F0C', hat:'tigerpaint'},
     root:311.13, mode:[0,2,4,7,9]
   },
 };
@@ -745,6 +756,20 @@ const THEMES = {
 const THEME_ORDER = ['nashville','lexington','columbiamo','starkville','fayetteville','columbiasc',
                      'oxford','auburn','knoxville','gainesville','athens','norman','austin',
                      'collegestation','tuscaloosa','batonrouge'];
+
+/* Every school's marquee rival, so the season finale is a grudge match instead
+   of a mirror match. Trophy games where one exists (Iron Bowl, Egg Bowl, Golden
+   Boot, Red River, Battle Line, Beer Barrel); a reasonable pairing otherwise. */
+const RIVAL = {
+  tuscaloosa:'auburn',        auburn:'tuscaloosa',        /* Iron Bowl */
+  oxford:'starkville',        starkville:'oxford',        /* Egg Bowl */
+  batonrouge:'fayetteville',  fayetteville:'batonrouge',  /* Golden Boot */
+  athens:'gainesville',       gainesville:'athens',       /* Florida-Georgia */
+  knoxville:'lexington',      lexington:'knoxville',      /* Beer Barrel */
+  austin:'norman',            norman:'austin',            /* Red River Rivalry */
+  collegestation:'columbiamo', columbiamo:'collegestation', /* border rivalry */
+  columbiasc:'nashville',     nashville:'columbiasc',
+};
 
 
 /* ---------- levels (geometry is balance-tested; do not reshape casually) ---------- */
@@ -893,7 +918,7 @@ const LEVELS = [
     grumps:[{x:860,y:370},{x:1104,y:370},{x:982,y:278},{x:802,y:490},{x:1162,y:490},
             {x:802,y:592},{x:1162,y:592},{x:1338,y:492}] },
 
-  { name:'Baton Rouge, LA', short:'Baton Rouge LA', venue:'The Levee', theme:'batonrouge', hint:'They came to the levee. Finish it.', shots:7,
+  { name:'Baton Rouge, LA', short:'Baton Rouge LA', venue:'The Levee', theme:'batonrouge', hint:'The road ends here. Finish it.', shots:7,
     blocks:[ col(858,640,86,'stone'), col(942,640,86,'stone'), beam(900,618,118,'stone'), col(858,538,80,'glass'),
              col(942,538,80,'glass'), beam(900,516,118,'stone'), col(858,434,82,'stone'), col(942,434,82,'stone'),
              beam(900,412,118,'stone'), col(862,336,76,'stone'), col(938,336,76,'stone'), beam(900,314,110,'stone'),
@@ -909,6 +934,27 @@ const MATS = {
   stone: {density:.0042, friction:.7,  restitution:.02, hp:78},
   glass: {density:.0009, friction:.25, restitution:.0,  hp:14}
 };
+
+/* ---------- your team ----------
+   Every LEVELS entry bundles a puzzle (blocks/grumps/shots/hint, balance-tested,
+   tied to that slot forever) with a school (name/venue/theme). Choosing a team
+   only ever remaps the second half: TEAM_INFO looks up the display name/venue for
+   any of the 16 schools by theme key, independent of which slot it currently
+   fills, and `schedule[i]` says which school's colours and name dress slot i this
+   run. The puzzle geometry for slot i never moves — only the school playing it. */
+const TEAM_INFO = {};
+LEVELS.forEach(L=>{ TEAM_INFO[L.theme] = {name:L.name, short:L.short, venue:L.venue}; });
+let myTeam = 'batonrouge';   /* default keeps the original schedule unchanged */
+let schedule = [];           /* schedule[i] = theme key filling slot i this run */
+function buildSchedule(){
+  const road = THEME_ORDER.filter(k=>k !== myTeam);
+  schedule = road.slice(0, LEVELS.length-1);
+  schedule.push(myTeam);   /* the last slot is always the title game, at home - the
+                               rival still shows up (drawGrump swaps the grump kit
+                               for the finale), it just doesn't relabel the whole
+                               stadium as an away trip to a place you already visited */
+}
+buildSchedule();
 
 /* ---------- state ---------- */
 let engine, world, blocks = [], grumps = [], flock = [], particles = [], motes = [], props = [];
@@ -928,8 +974,11 @@ const TITLE_WINS = 12;            /* road wins needed to play for the title */
 const roadWins = ()=> Object.keys(season).filter(k=>+k < 15 && season[k]==='W').length;
 const roadLoss = ()=> Object.keys(season).filter(k=>+k < 15 && season[k]==='L').length;
 
-const theme = ()=> THEMES[LEVELS[Math.min(level, LEVELS.length-1)].theme];
-const themeKey = ()=> LEVELS[Math.min(level, LEVELS.length-1)].theme;
+const theme = ()=> THEMES[schedule[Math.min(level, schedule.length-1)]];
+const themeKey = ()=> schedule[Math.min(level, schedule.length-1)];
+/* the school occupying a given slot this run, for display text — the puzzle at
+   that slot (LEVELS[i]) never changes, only whose colours and name dress it */
+const teamAt = i => TEAM_INFO[schedule[Math.min(i, schedule.length-1)]];
 /* the Columbia SC level runs a periodic sandstorm: pure weather, no physics change */
 let gust = 0, gustNext = 7;
 
@@ -944,10 +993,19 @@ async function loadProgress(){
       try{ const v = localStorage.getItem(k); if (v){ raw = v; break; } }catch(e){}
     }
   }
-  if (raw){ try{ const d = JSON.parse(raw); best = d.best || {}; season = d.season || {}; }catch(e){} }
+  if (raw){
+    try{
+      const d = JSON.parse(raw);
+      best = d.best || {}; season = d.season || {};
+      /* older saves predate team choice: 'batonrouge' is what they were already
+         playing, so this default reproduces their existing schedule exactly */
+      if (d.myTeam && THEMES[d.myTeam]) myTeam = d.myTeam;
+    }catch(e){}
+  }
+  buildSchedule();
 }
 async function saveProgress(){
-  const payload = JSON.stringify({best, season});
+  const payload = JSON.stringify({best, season, myTeam});
   try{ if (window.storage) await window.storage.set(SAVE_KEY, payload); }catch(e){}
   try{ localStorage.setItem(SAVE_KEY, payload); }catch(e){}
 }
@@ -1015,10 +1073,10 @@ function loadLevel(i){
     grumps.push(body); Composite.add(world, body);
   });
 
-  const t = theme();
-  document.getElementById('lvlkicker').innerHTML = `Level ${i+1}<span class="venue"> · ${L.venue}</span>`;
+  const t = theme(), info = teamAt(i);
+  document.getElementById('lvlkicker').innerHTML = `Level ${i+1}<span class="venue"> · ${info.venue}</span>`;
   document.getElementById('lvlkicker').style.color = t.accent;
-  document.getElementById('lvlname').textContent = L.name;
+  document.getElementById('lvlname').textContent = info.name;
   const hintEl = document.getElementById('lvlhint');
   hintEl.textContent = L.hint || '';
   hintEl.classList.add('show');
@@ -1072,7 +1130,7 @@ function onHit(evt){
     if (e < 4) continue;
     if (e > 34) shake = Math.min(17, Math.max(shake, e*.22));
     if (e > 26 && (bodyA.plugin?.kind === 'uni' || bodyB.plugin?.kind === 'uni')) SFX.land();
-    if (e > 14 && themeKey() === 'mstate' && performance.now() - lastBell > 150){
+    if (e > 14 && themeKey() === 'starkville' && performance.now() - lastBell > 150){
       lastBell = performance.now(); SFX.cowbell();
     }
     [bodyA, bodyB].forEach(b=>{
@@ -1382,18 +1440,18 @@ function finish(won){
   if (champ) SFX.fanfare(); else if (isWin) SFX.win(); else SFX.lose();
   if (champ){ shake = Math.max(shake, 10); for (let i=0;i<9;i++) setTimeout(()=>SFX.pop(), i*230); }
 
-  const t = theme(), card = document.getElementById('card');
+  const t = theme(), info = teamAt(level), card = document.getElementById('card');
   /* Level names carry a state suffix ("Starkville, MS"), which must not leak into
      the headline: splitting the whole string on spaces would emphasise the
      abbreviation and turn the one-star card into "Survived MS". */
-  const city = L.name.split(',')[0].trim();
+  const city = info.name.split(',')[0].trim();
   const words = city.split(' ');
   const recLine = `Season record <b style="color:${t.accent}">${wins}&ndash;${losses}</b>`;
   const nextBtn = level < LEVELS.length-1 ? 'Next stadium' : 'Back to the schedule';
 
   if (champ){
     card.innerHTML = `
-      <div class="eyebrow" style="color:var(--gold)">Confetti on the Levee</div>
+      <div class="eyebrow" style="color:var(--gold)">Confetti at ${info.venue}</div>
       <h1>National <em>Champions</em></h1>
       <div class="stars">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
       <p>You finished the road ${wins}&ndash;${losses} and took the rematch.
@@ -1419,7 +1477,7 @@ function finish(won){
     document.getElementById('pick').onclick = showMenu;
   } else if (isWin){
     card.innerHTML = `
-      <div class="eyebrow" style="color:${t.accent}">Win at ${L.venue}</div>
+      <div class="eyebrow" style="color:${t.accent}">Win at ${info.venue}</div>
       <h1>${words.slice(0,-1).join(' ')} <em>${words.slice(-1)}</em></h1>
       <div class="stars">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
       <p>${final.toLocaleString()} points, ${shotsLeft} football${shotsLeft===1?'':'s'} unused. ${recLine}.</p>
@@ -1481,6 +1539,7 @@ const GAP_WEIGHT = [
   ['.eyebrow',     0.34],  /* result kicker sits directly on the headline */
   ['h1',           0.90],
   ['.stars',       1.25],
+  ['.teambar',     0.70],  /* team switcher reads as a control, not a body row */
   ['.howto',       1.15],  /* the one rule, so give it room on both sides */
   ['.plays',       1.60],
   ['.recline',     1.40],
@@ -1538,14 +1597,22 @@ function showMenu(){
   const card = document.getElementById('card');
   const anyPlayed = Object.keys(season).length;
   const w = roadWins(), l = roadLoss(), left = 15 - w - l;
+  const home = THEMES[myTeam], homeInfo = TEAM_INFO[myTeam];
+  /* the menu has no level loaded yet to set --gold for it, so the chosen team's
+     colour dresses the whole screen instead of whatever the last level left behind */
+  document.documentElement.style.setProperty('--gold', home.accent);
   const titleLine = w >= TITLE_WINS
-    ? `<b>You are in the title game.</b> Win the rematch at home for the championship.`
+    ? `<b>You are in the title game.</b> Win the rivalry rematch at home for the championship.`
     : (w + left >= TITLE_WINS
         ? `<b>${TITLE_WINS - w}</b> more road wins puts you in the title game.`
         : `The title is out of reach this season. Rerun a loss to get back in it.`);
   card.innerHTML = `
     <h1 class="gametitle"><em>Pounce</em></h1>
     <div class="eyebrow subtitle" style="color:var(--gold)">Sixteen Saturdays on the Road</div>
+    <div class="teambar">
+      <span class="teaminfo"><span class="teamdot" style="background:${home.accent}"></span>Playing as <b style="color:${home.accent}">${homeInfo.short}</b></span>
+      <button class="btn ghost" id="chooseTeam">Choose Team</button>
+    </div>
     <div class="howto">Every football carries a <b>random play</b>, so once one is in the
       air, <b>tap the screen or press SPACE</b> to spend it.</div>
     <div class="plays">
@@ -1557,14 +1624,15 @@ function showMenu(){
     <div class="actions"><button class="btn" id="start">${anyPlayed ? 'Back on the bus' : 'Kickoff'}</button></div>`;
   const grid = document.getElementById('grid');
   LEVELS.forEach((L,i)=>{
-    /* every level is open from the start: pick any stadium, any time */
-    const t = THEMES[L.theme];
+    /* every level is open from the start: pick any stadium, any time. Which
+       school fills slot i depends on the schedule, not on LEVELS[i] itself */
+    const key = schedule[i], t = THEMES[key], info = TEAM_INFO[key];
     const b = document.createElement('button');
     b.className = 'lvl' + (season[i]==='W' ? ' win' : season[i]==='L' ? ' loss' : '');
     b.style.background = `linear-gradient(160deg, ${t.sky[1][1]}, ${t.sky[3][1]})`;
     if (season[i] !== 'W') b.style.borderColor = t.accent + '88';
     const mark = season[i]==='W' ? 'W' : season[i]==='L' ? 'L' : '·';
-    b.innerHTML = `<b>${i+1}</b><small>${L.short || L.name}</small>
+    b.innerHTML = `<b>${i+1}</b><small>${info.short || info.name}</small>
                    <i>${best[i]!==undefined ? '★'.repeat(best[i]) : ''}${mark}</i>`;
     b.onclick = ()=>{ hideVeil(); loadLevel(i); };
     grid.appendChild(b);
@@ -1574,6 +1642,48 @@ function showMenu(){
     while (next < LEVELS.length-1 && season[next] === 'W') next++;
     hideVeil(); loadLevel(next);
   };
+  document.getElementById('chooseTeam').onclick = showTeamPicker;
+  showVeil();
+  fitCard();
+}
+
+/* Picking a team only ever remaps which school's name and colours dress each
+   slot (see buildSchedule) — the puzzle at every slot, and the record and stars
+   already earned there, stay exactly as they were. Swap teams as often as you
+   like; the schedule just relabels itself around your pick. */
+function showTeamPicker(){
+  phase = 'menu';
+  const card = document.getElementById('card');
+  card.innerHTML = `
+    <h1 class="gametitle"><em>Pounce</em></h1>
+    <div class="eyebrow subtitle" style="color:var(--gold)">Choose Your Team</div>
+    <p>Pick who you're playing as. The other fifteen fill out your road schedule,
+       and your biggest rival comes to town for the title game at the end.</p>
+    <div class="grid" id="teamgrid"></div>
+    <div class="actions"><button class="btn ghost" id="backToMenu">Back</button></div>`;
+  const grid = document.getElementById('teamgrid');
+  THEME_ORDER.forEach(key=>{
+    const t = THEMES[key], info = TEAM_INFO[key], mine = key === myTeam;
+    const b = document.createElement('button');
+    b.className = 'lvl' + (mine ? ' chosen' : '');
+    b.style.background = `linear-gradient(160deg, ${t.sky[1][1]}, ${t.sky[3][1]})`;
+    b.style.borderColor = t.accent + (mine ? 'ff' : '88');
+    b.innerHTML = `<b>${info.short.split(' ').pop()}</b><small>${info.short}</small>
+                   <i>${mine ? '✓' : ''}</i>`;
+    b.onclick = ()=>{
+      if (mine) return;
+      myTeam = key;
+      buildSchedule();
+      /* a new team means a new season: last team's wins, losses and stars were
+         earned playing a different roster and shouldn't carry over as if this
+         team had already played those games */
+      season = {}; best = {};
+      saveProgress();
+      showMenu();
+    };
+    grid.appendChild(b);
+  });
+  document.getElementById('backToMenu').onclick = showMenu;
   showVeil();
   fitCard();
 }
@@ -4069,7 +4179,7 @@ function drawSling(){
 
   /* aim: the tiger tracks the ball while it is on the pad */
   const target = held ? held.position : {x: ANCHOR.x + 40, y: ANCHOR.y};
-  drawTiger(TIGER.x, TIGER.y, t, target, dragging);
+  drawMascot(TIGER.x, TIGER.y, t, target, dragging);
 
   /* wind-up: a dashed line of force from paw to ball, brighter the harder the pull */
   if (held){
@@ -4101,8 +4211,12 @@ function drawSling(){
   }
 }
 
-/* The player character. Orange bengal coat, black stripes, purple and gold collar.
-   He never leaves the pad; the football is what flies. */
+/* The player character. Orange bengal coat, black stripes always — redrawing the
+   coat itself for eight schools that aren't tigers is a different project. The
+   collar is the one piece that's actually yours: it takes your chosen team's
+   colour, so the mascot reads as "playing for" whoever you picked without
+   pretending to be their real mascot. He never leaves the pad; the football is
+   what flies. */
 function drawTiger(x, y, t, target, winding){
   const breathe = Math.sin(t*1.9)*1.4;
   const aim = Math.atan2(target.y - (y-10), target.x - (x+26));
@@ -4194,11 +4308,505 @@ function drawTiger(x, y, t, target, winding){
   ctx.beginPath(); ctx.arc(19,5,5,0,Math.PI*2); ctx.fill();
   ctx.restore();
 
-  /* collar: purple band, gold tag */
-  ctx.strokeStyle = '#461D7C'; ctx.lineWidth = 5.5;
+  /* collar: band in your team's colour, tag a lighter tint of the same */
+  const homeAccent = THEMES[myTeam].accent;
+  ctx.strokeStyle = homeAccent; ctx.lineWidth = 5.5;
   ctx.beginPath(); ctx.arc(0, 3, 22, Math.PI*.22, Math.PI*.78); ctx.stroke();
-  ctx.fillStyle = '#FDD023';
+  ctx.fillStyle = mix(homeAccent, '#ffffff', .55);
   ctx.beginPath(); ctx.arc(0, 25, 4.4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* ============================================================
+   OTHER MASCOTS — every team but LSU gets its own player character
+   ============================================================
+   Same rig as drawTiger: body circle r=25 at the origin, ears around
+   y=-21, eyes at y=-5, muzzle/snout around y=9, haunches/feet at
+   y=16/26, arm pivot at (14,-6), collar band at y=3/25. Sharing that
+   skeleton means every mascot sits on the crossbar and throws the same
+   way; only the costume — body colours, ears, snout, tail, and one
+   signature feature — changes per team. */
+function mascotBody(base, mid, dark){
+  const bg = ctx.createRadialGradient(-7,-9,4, 0,0,29);
+  bg.addColorStop(0, base); bg.addColorStop(.55, mid); bg.addColorStop(1, dark);
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(0,0,25,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 4.4; ctx.stroke();
+  ctx.strokeStyle = dark; ctx.lineWidth = 2.4; ctx.stroke();
+}
+function mascotFeet(hip, foot){
+  ctx.fillStyle = hip;
+  ctx.beginPath(); ctx.ellipse(-12, 16, 13, 9, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = foot;
+  ctx.beginPath(); ctx.ellipse(-13, 26, 8, 4, 0, 0, Math.PI*2);
+  ctx.ellipse(9, 26, 8, 4, 0, 0, Math.PI*2); ctx.fill();
+}
+function mascotEyes(look, iris, lid){
+  ctx.fillStyle = '#fffaf0';
+  ctx.beginPath(); ctx.arc(-7,-5,6.4,0,Math.PI*2); ctx.arc(8,-5,6.4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = iris;
+  ctx.beginPath(); ctx.arc(-7+look,-5,3.6,0,Math.PI*2); ctx.arc(8+look,-5,3.6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a0d08';
+  ctx.beginPath(); ctx.ellipse(-7+look,-5,1.5,3.1,0,0,Math.PI*2);
+  ctx.ellipse(8+look,-5,1.5,3.1,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  ctx.beginPath(); ctx.arc(-8.4+look,-6.8,1.2,0,Math.PI*2); ctx.arc(6.6+look,-6.8,1.2,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = lid; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-15,-13); ctx.lineTo(-2,-10); ctx.moveTo(16,-13); ctx.lineTo(3,-10); ctx.stroke();
+}
+function mascotArm(aim, limb, paw){
+  ctx.save();
+  ctx.translate(14, -6);
+  ctx.rotate(Math.max(-1.15, Math.min(1.15, aim)) * .55 - .25);
+  ctx.strokeStyle = limb; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(17,4); ctx.stroke();
+  ctx.fillStyle = paw;
+  ctx.beginPath(); ctx.arc(19,5,5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function mascotCollar(accent){
+  ctx.strokeStyle = accent; ctx.lineWidth = 5.5;
+  ctx.beginPath(); ctx.arc(0, 3, 22, Math.PI*.22, Math.PI*.78); ctx.stroke();
+  ctx.fillStyle = mix(accent, '#ffffff', .55);
+  ctx.beginPath(); ctx.arc(0, 25, 4.4, 0, Math.PI*2); ctx.fill();
+}
+/* a plain curling tail, coloured to order — the default unless a species
+   trades it for a flipper, a plume, a fin or nothing at all */
+function mascotTail(color, tip){
+  ctx.strokeStyle = color; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-20, 12);
+  ctx.quadraticCurveTo(-46, 8, -44, -20);
+  ctx.stroke();
+  if (tip){
+    ctx.strokeStyle = tip; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-44,-20); ctx.lineTo(-40,-11); ctx.stroke();
+  }
+}
+
+const MASCOT_DRAW = {
+
+  /* Nashville: the Commodore, played as a seal in a captain's cap */
+  nashville(t, aim){
+    mascotTail('#4a5560');
+    mascotFeet('#57626F', '#2B323A');
+    mascotBody('#8B99A8', '#5B6A78', '#262C33');
+    ctx.fillStyle = '#B9C2CB';
+    ctx.beginPath(); ctx.ellipse(-5, 9, 8.5, 6.5, 0, 0, Math.PI*2);
+    ctx.ellipse(6, 9, 8.5, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(20,24,28,.55)'; ctx.lineWidth = 1;
+    [[-9,8,-22,5],[-9,10,-22,11],[9,8,22,5],[9,10,22,11]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+    });
+    /* cap: gold-banded navy crown, tilted rakishly */
+    ctx.save(); ctx.rotate(-.1);
+    ctx.fillStyle = '#16233F';
+    ctx.beginPath(); ctx.ellipse(0,-24,14,5,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-11,-25); ctx.quadraticCurveTo(-11,-36,0,-36);
+    ctx.quadraticCurveTo(11,-36,11,-25); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#C9A96A';
+    ctx.beginPath(); ctx.ellipse(0,-25,11,2.2,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    return {iris:'#2a2420'};
+  },
+
+  /* Lexington: the Wildcat */
+  lexington(t, aim){
+    mascotTail('#3F5FA8', '#1C2E56');
+    mascotFeet('#3F5FA8', '#1C2E56');
+    mascotBody('#7FA0DE', '#3F5FA8', '#1C2E56');
+    ctx.fillStyle = '#EDE6D2';
+    ctx.beginPath(); ctx.ellipse(-5, 9, 8.5, 6.5, 0, 0, Math.PI*2);
+    ctx.ellipse(6, 9, 8.5, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1C2E56';
+    ctx.beginPath(); ctx.moveTo(-3.6,3.4); ctx.lineTo(3.6,3.4); ctx.lineTo(0,7.4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(28,46,86,.55)'; ctx.lineWidth = 1;
+    [[-9,8,-22,5],[-9,10,-22,11],[9,8,22,5],[9,10,22,11]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+    });
+    /* tall tufted ears */
+    ctx.fillStyle = '#3F5FA8'; ctx.strokeStyle = '#1C2E56'; ctx.lineWidth = 2;
+    [-14,14].forEach(ex=>{
+      ctx.beginPath(); ctx.moveTo(ex-7,-18); ctx.lineTo(ex,-38); ctx.lineTo(ex+7,-18);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    ctx.strokeStyle = '#0d1730'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    [-14,14].forEach(ex=>{ ctx.beginPath(); ctx.moveTo(ex,-33); ctx.lineTo(ex,-27); ctx.stroke(); });
+    return {iris:'#e0a83c'};
+  },
+
+  /* Columbia, MO: a second tiger — black and gold, not LSU's purple and
+     gold or Auburn's navy and orange */
+  columbiamo(t, aim){
+    ctx.strokeStyle = '#E8A93C'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-20, 12);
+    ctx.quadraticCurveTo(-46, 8 + Math.sin(t*2.2)*7, -44, -20 + Math.sin(t*2.2)*8);
+    ctx.stroke();
+    ctx.strokeStyle = '#151008'; ctx.lineWidth = 2.6;
+    for (let i=0;i<3;i++){
+      const f = .35 + i*.22;
+      const tx = -20 + (-24)*f, ty = 12 + (-26)*f + Math.sin(t*2.2)*7*f;
+      ctx.beginPath(); ctx.moveTo(tx-3, ty-4); ctx.lineTo(tx+3, ty+2); ctx.stroke();
+    }
+    mascotFeet('#E8A93C', '#151008');
+    mascotBody('#FFDE7A', '#E8A93C', '#3A2A06');
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0,0,24,0,Math.PI*2); ctx.clip();
+    ctx.strokeStyle = '#151008'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    [[-19,-14,-7,-19],[-21,-2,-9,-6],[-19,10,-7,7],[16,-16,7,-20],[19,-4,9,-8],[17,8,7,6]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.quadraticCurveTo((v[0]+v[2])/2, (v[1]+v[3])/2 - 3, v[2], v[3]); ctx.stroke();
+    });
+    ctx.restore();
+    ctx.fillStyle = '#E8A93C'; ctx.strokeStyle = '#151008'; ctx.lineWidth = 2;
+    [-14, 14].forEach(ex=>{ ctx.beginPath(); ctx.arc(ex, -21, 7.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+    ctx.fillStyle = '#151008';
+    [-14, 14].forEach(ex=>{ ctx.beginPath(); ctx.arc(ex, -21, 3.6, 0, Math.PI*2); ctx.fill(); });
+    ctx.fillStyle = '#FFF6DE';
+    ctx.beginPath(); ctx.ellipse(-5, 9, 8.5, 6.5, 0, 0, Math.PI*2);
+    ctx.ellipse(6, 9, 8.5, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#151008';
+    ctx.beginPath(); ctx.moveTo(-3.6,3.4); ctx.lineTo(3.6,3.4); ctx.lineTo(0,7.4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(21,16,8,.55)'; ctx.lineWidth = 1;
+    [[-9,8,-22,5],[-9,10,-22,11],[9,8,22,5],[9,10,22,11]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+    });
+    return {iris:'#1d7a3f', lid:'#151008', limb:'#E8A93C', paw:'#FFF6DE'};
+  },
+
+  /* Starkville: the Bulldog, folded ears and a cowbell's worth of jowl */
+  starkville(t, aim){
+    mascotTail('#7A1F24', '#2B0A0C');
+    mascotFeet('#7A1F24', '#2B0A0C');
+    mascotBody('#C0464F', '#7A1F24', '#2B0A0C');
+    ctx.fillStyle = '#F4EFE6';
+    ctx.beginPath(); ctx.ellipse(-6, 11, 10, 7.5, 0, 0, Math.PI*2);
+    ctx.ellipse(7, 11, 10, 7.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2B0A0C';
+    ctx.beginPath(); ctx.moveTo(-3.6,4); ctx.lineTo(3.6,4); ctx.lineTo(0,8.4); ctx.closePath(); ctx.fill();
+    /* folded bulldog ears */
+    ctx.fillStyle = mix('#7A1F24', '#2B0A0C', .3); ctx.strokeStyle = '#2B0A0C'; ctx.lineWidth = 2;
+    [-1,1].forEach(s=>{
+      ctx.beginPath();
+      ctx.moveTo(s*15,-20); ctx.quadraticCurveTo(s*30,-24,s*29,-6);
+      ctx.quadraticCurveTo(s*22,-8,s*15,-14); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    return {iris:'#3a2a1a'};
+  },
+
+  /* Fayetteville: the Razorback, tusks and a bristled ridge */
+  fayetteville(t, aim){
+    mascotTail('#A03A42', '#3A0F14');
+    mascotFeet('#A03A42', '#3A0F14');
+    mascotBody('#D2585B', '#A03A42', '#3A0F14');
+    /* bristled ridge along the top */
+    ctx.fillStyle = mix('#3A0F14','#ffffff',.16);
+    for (let i=-3;i<=3;i++){
+      const h = 30 - Math.abs(i)*4;
+      ctx.beginPath();
+      ctx.moveTo(i*6-3,-19); ctx.lineTo(i*6 + (i<0?-2:2), -h); ctx.lineTo(i*6+3,-19);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#F4E2D8';
+    ctx.beginPath(); ctx.ellipse(-4, 11, 8, 6, 0, 0, Math.PI*2);
+    ctx.ellipse(7, 11, 8, 6, 0, 0, Math.PI*2); ctx.fill();
+    /* tusks curling from the lower jaw */
+    ctx.strokeStyle = '#F4EEDD'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-3,15); ctx.quadraticCurveTo(-8,22,-4,26);
+    ctx.moveTo(6,15); ctx.quadraticCurveTo(11,22,7,26);
+    ctx.stroke();
+    ctx.fillStyle = mix('#A03A42', '#F4E2D8', .3); ctx.strokeStyle = '#3A0F14'; ctx.lineWidth = 1.8;
+    [-1,1].forEach(s=>{
+      ctx.beginPath();
+      ctx.moveTo(s*13,-16); ctx.quadraticCurveTo(s*22,-20,s*19,-8);
+      ctx.quadraticCurveTo(s*15,-10,s*12,-13); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    return {iris:'#241a12'};
+  },
+
+  /* Columbia, SC: the Gamecock — comb, wattle and beak instead of a face */
+  columbiasc(t, aim){
+    /* feather plume instead of a tail */
+    ctx.fillStyle = '#5C0F18';
+    [[-40,-2],[-46,-14],[-38,-22]].forEach(([fx,fy])=>{
+      ctx.beginPath(); ctx.ellipse(fx,fy,9,4,.5,0,Math.PI*2); ctx.fill();
+    });
+    mascotFeet('#5C0F18', '#22050A');
+    mascotBody('#9C2632', '#5C0F18', '#22050A');
+    ctx.fillStyle = '#E8A33C'; ctx.strokeStyle = '#a86e18'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-6,9); ctx.lineTo(13,13); ctx.lineTo(-6,18); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#C4172B';
+    ctx.beginPath(); ctx.ellipse(-2,20,4,6,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#C4172B';
+    [[-11,26],[0,32],[11,27]].forEach(([cx,ch])=>{
+      ctx.beginPath(); ctx.arc(cx,-ch+4,8.5,Math.PI,0); ctx.fill();
+    });
+    return {iris:'#c8862a', lid:'#22050A', limb:'#5C0F18'};
+  },
+
+  /* Oxford: the Land Shark — dorsal fin, no ears, a grin full of teeth */
+  oxford(t, aim){
+    ctx.fillStyle = '#365777';
+    ctx.beginPath(); ctx.moveTo(-16,-19); ctx.quadraticCurveTo(-4,-46,14,-38);
+    ctx.quadraticCurveTo(4,-28,10,-19); ctx.closePath(); ctx.fill();
+    /* tail fin instead of a curl */
+    ctx.beginPath();
+    ctx.moveTo(-20,4); ctx.quadraticCurveTo(-42,-6,-46,-24);
+    ctx.quadraticCurveTo(-36,-4,-18,14); ctx.closePath(); ctx.fill();
+    mascotFeet('#365777', '#131F2B');
+    mascotBody('#84AAC9', '#5C86AC', '#131F2B');
+    ctx.fillStyle = mix('#5C86AC','#ffffff',.6);
+    ctx.beginPath(); ctx.ellipse(-4, 10, 9, 6, 0, 0, Math.PI*2);
+    ctx.ellipse(7, 10, 9, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#131F2B'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-11,13); ctx.quadraticCurveTo(0,18,12,13); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    for (let i=-3;i<=3;i++){
+      ctx.beginPath(); ctx.moveTo(i*4-1.6,14); ctx.lineTo(i*4+1.6,14); ctx.lineTo(i*4,18); ctx.closePath(); ctx.fill();
+    }
+    return {iris:'#0a0a0a', lid:'#131F2B', limb:'#365777'};
+  },
+
+  /* Auburn: a third tiger — navy and burnt orange */
+  auburn(t, aim){
+    ctx.strokeStyle = '#D97A28'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-20, 12);
+    ctx.quadraticCurveTo(-46, 8 + Math.sin(t*2.2)*7, -44, -20 + Math.sin(t*2.2)*8);
+    ctx.stroke();
+    ctx.strokeStyle = '#0C2340'; ctx.lineWidth = 2.6;
+    for (let i=0;i<3;i++){
+      const f = .35 + i*.22;
+      const tx = -20 + (-24)*f, ty = 12 + (-26)*f + Math.sin(t*2.2)*7*f;
+      ctx.beginPath(); ctx.moveTo(tx-3, ty-4); ctx.lineTo(tx+3, ty+2); ctx.stroke();
+    }
+    mascotFeet('#D97A28', '#0C2340');
+    mascotBody('#F2933F', '#D97A28', '#0C2340');
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0,0,24,0,Math.PI*2); ctx.clip();
+    ctx.strokeStyle = '#0C2340'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    [[-19,-14,-7,-19],[-21,-2,-9,-6],[-19,10,-7,7],[16,-16,7,-20],[19,-4,9,-8],[17,8,7,6]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.quadraticCurveTo((v[0]+v[2])/2, (v[1]+v[3])/2 - 3, v[2], v[3]); ctx.stroke();
+    });
+    ctx.restore();
+    ctx.fillStyle = '#D97A28'; ctx.strokeStyle = '#0C2340'; ctx.lineWidth = 2;
+    [-14, 14].forEach(ex=>{ ctx.beginPath(); ctx.arc(ex, -21, 7.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+    ctx.fillStyle = '#0C2340';
+    [-14, 14].forEach(ex=>{ ctx.beginPath(); ctx.arc(ex, -21, 3.6, 0, Math.PI*2); ctx.fill(); });
+    ctx.fillStyle = '#FFF1DE';
+    ctx.beginPath(); ctx.ellipse(-5, 9, 8.5, 6.5, 0, 0, Math.PI*2);
+    ctx.ellipse(6, 9, 8.5, 6.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0C2340';
+    ctx.beginPath(); ctx.moveTo(-3.6,3.4); ctx.lineTo(3.6,3.4); ctx.lineTo(0,7.4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(12,35,64,.55)'; ctx.lineWidth = 1;
+    [[-9,8,-22,5],[-9,10,-22,11],[9,8,22,5],[9,10,22,11]].forEach(v=>{
+      ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+    });
+    return {iris:'#1d7a3f', lid:'#0C2340', limb:'#D97A28', paw:'#FFF1DE'};
+  },
+
+  /* Knoxville: the Hound, ticked coat and ears that drag the crossbar */
+  knoxville(t, aim){
+    mascotTail('#5C6472', '#22262E');
+    mascotFeet('#5C6472', '#22262E');
+    mascotBody('#9AA3B0', '#8791A0', '#22262E');
+    /* bluetick speckling */
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    for (let i=0;i<16;i++){
+      const a2 = i*2.4, r = 10 + (i%5)*3;
+      ctx.beginPath(); ctx.arc(Math.cos(a2)*r, Math.sin(a2)*r*.8, 1, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle = '#EDE7DC';
+    ctx.beginPath(); ctx.ellipse(-5, 12, 9, 8, 0, 0, Math.PI*2);
+    ctx.ellipse(6, 12, 9, 8, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#22262E';
+    ctx.beginPath(); ctx.moveTo(-3.6,6); ctx.lineTo(3.6,6); ctx.lineTo(0,10.4); ctx.closePath(); ctx.fill();
+    /* long droopy ears */
+    ctx.fillStyle = '#6B4A2E'; ctx.strokeStyle = '#22262E'; ctx.lineWidth = 2;
+    [-1,1].forEach(s=>{
+      ctx.beginPath();
+      ctx.moveTo(s*14,-16); ctx.quadraticCurveTo(s*28,-4,s*22,22);
+      ctx.quadraticCurveTo(s*14,18,s*11,-8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    return {iris:'#5a3a1a'};
+  },
+
+  /* Gainesville: the Gator, a long toothed jaw where a muzzle would be */
+  gainesville(t, aim){
+    ctx.strokeStyle = '#3E7A4A'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-18, 8); ctx.quadraticCurveTo(-40, 4, -42, -16); ctx.stroke();
+    ctx.fillStyle = mix('#122E18','#ffffff',.16);
+    for (let i=0;i<4;i++){
+      ctx.beginPath();
+      ctx.moveTo(-42+i*3,-14-i*2); ctx.lineTo(-40+i*3,-19-i*2); ctx.lineTo(-38+i*3,-14-i*2);
+      ctx.closePath(); ctx.fill();
+    }
+    mascotFeet('#3E7A4A', '#122E18');
+    mascotBody('#7BB07E', '#3E7A4A', '#122E18');
+    ctx.fillStyle = mix('#122E18','#ffffff',.2); ctx.strokeStyle = '#122E18'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-14,9); ctx.quadraticCurveTo(2,4,26,11);
+    ctx.quadraticCurveTo(28,18,25,23);
+    ctx.quadraticCurveTo(2,28,-14,23); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fbf6e8';
+    for (let i=0;i<6;i++){
+      const tx = -10 + i*6.5;
+      ctx.beginPath(); ctx.moveTo(tx,15); ctx.lineTo(tx+2.6,21); ctx.lineTo(tx+5,15); ctx.closePath(); ctx.fill();
+    }
+    return {iris:'#c8b400', lid:'#122E18', limb:'#3E7A4A'};
+  },
+
+  /* Athens: a second bulldog — crimson and black, not maroon and white */
+  athens(t, aim){
+    mascotTail('#8A1420', '#2E060A');
+    mascotFeet('#8A1420', '#2E060A');
+    mascotBody('#C8342E', '#8A1420', '#2E060A');
+    ctx.fillStyle = '#F4EFE6';
+    ctx.beginPath(); ctx.ellipse(-6, 11, 10, 7.5, 0, 0, Math.PI*2);
+    ctx.ellipse(7, 11, 10, 7.5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2E060A';
+    ctx.beginPath(); ctx.moveTo(-3.6,4); ctx.lineTo(3.6,4); ctx.lineTo(0,8.4); ctx.closePath(); ctx.fill();
+    /* black folded ears */
+    ctx.fillStyle = '#181316'; ctx.strokeStyle = '#0a0708'; ctx.lineWidth = 2;
+    [-1,1].forEach(s=>{
+      ctx.beginPath();
+      ctx.moveTo(s*15,-20); ctx.quadraticCurveTo(s*30,-24,s*29,-6);
+      ctx.quadraticCurveTo(s*22,-8,s*15,-14); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    return {iris:'#3a2a1a'};
+  },
+
+  /* Norman: Boomer, a bay pony with a cream mane and tail */
+  norman(t, aim){
+    ctx.strokeStyle = '#EFE6C8'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    [-6,0,6].forEach((ox,i)=>{
+      ctx.beginPath();
+      ctx.moveTo(-24+ox*.3, 0+i*2); ctx.quadraticCurveTo(-44+ox, -6+i*3+Math.sin(t*2+i)*3, -46+ox, -22+i*2);
+      ctx.stroke();
+    });
+    mascotFeet('#8B4A22', '#2E1608');
+    mascotBody('#C8763C', '#8B4A22', '#2E1608');
+    /* mane along the crown */
+    ctx.fillStyle = '#EFE6C8';
+    for (let i=-2;i<=2;i++){
+      ctx.beginPath(); ctx.ellipse(i*6,-19,4,9,0,0,Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle = mix('#8B4A22','#ffffff',.2);
+    ctx.beginPath(); ctx.ellipse(0, 14, 9, 12, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2E1608';
+    ctx.beginPath(); ctx.ellipse(-4,18,2,3,0,0,Math.PI*2); ctx.ellipse(4,18,2,3,0,0,Math.PI*2); ctx.fill();
+    /* small alert ears */
+    ctx.fillStyle = '#8B4A22'; ctx.strokeStyle = '#2E1608'; ctx.lineWidth = 2;
+    [-13,13].forEach(ex=>{
+      ctx.beginPath(); ctx.moveTo(ex-5,-18); ctx.lineTo(ex,-32); ctx.lineTo(ex+5,-18); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    });
+    return {iris:'#2a1c10', lid:'#2E1608', limb:'#8B4A22'};
+  },
+
+  /* Austin: the Longhorn, wider than anything else in the game */
+  austin(t, aim){
+    mascotTail('#B5651E', '#3A1C08');
+    mascotFeet('#B5651E', '#3A1C08');
+    mascotBody('#D98A3D', '#B5651E', '#3A1C08');
+    ctx.fillStyle = mix('#B5651E','#ffffff',.3);
+    ctx.beginPath(); ctx.ellipse(0, 13, 9, 11, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#3A1C08';
+    ctx.beginPath(); ctx.ellipse(-4,17,1.8,2.6,0,0,Math.PI*2); ctx.ellipse(4,17,1.8,2.6,0,0,Math.PI*2); ctx.fill();
+    /* the horns, wider than anything else in the game */
+    const hg2 = ctx.createLinearGradient(-34,-30,34,-24);
+    hg2.addColorStop(0,'#f0e4cc'); hg2.addColorStop(.5,'#d8c49c'); hg2.addColorStop(1,'#f0e4cc');
+    ctx.strokeStyle = hg2; ctx.lineWidth = 6.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-3,-20); ctx.quadraticCurveTo(-22,-28,-33,-18);
+    ctx.moveTo(3,-20); ctx.quadraticCurveTo(22,-28,33,-18);
+    ctx.stroke();
+    ctx.strokeStyle = hg2; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-33,-18); ctx.quadraticCurveTo(-40,-12,-37,-4);
+    ctx.moveTo(33,-18); ctx.quadraticCurveTo(40,-12,37,-4);
+    ctx.stroke();
+    ctx.fillStyle = '#B5651E'; ctx.strokeStyle = '#3A1C08'; ctx.lineWidth = 2;
+    [-15,15].forEach(ex=>{ ctx.beginPath(); ctx.arc(ex, -19, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+    return {iris:'#2a1c10', lid:'#3A1C08', limb:'#B5651E'};
+  },
+
+  /* College Station: Reveille, a sable-and-white collie */
+  collegestation(t, aim){
+    ctx.strokeStyle = '#8A6234'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-18, 8); ctx.quadraticCurveTo(-40, 2+Math.sin(t*2)*3, -40, -16+Math.sin(t*2)*4);
+    ctx.stroke();
+    mascotFeet('#8A6234', '#3A2612');
+    mascotBody('#C9A06A', '#8A6234', '#3A2612');
+    /* the white blaze and chest patch */
+    ctx.fillStyle = '#F0EAD8';
+    ctx.beginPath(); ctx.ellipse(0, 17, 11, 9, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-3,2); ctx.quadraticCurveTo(0,10,3,2); ctx.lineTo(2,-6); ctx.lineTo(-2,-6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#3A2612';
+    ctx.beginPath(); ctx.moveTo(-3.6,4); ctx.lineTo(3.6,4); ctx.lineTo(0,8.4); ctx.closePath(); ctx.fill();
+    /* large floppy ears */
+    ctx.fillStyle = '#8A6234'; ctx.strokeStyle = '#3A2612'; ctx.lineWidth = 1.8;
+    [-1,1].forEach(s=>{
+      ctx.beginPath();
+      ctx.moveTo(s*13,-20); ctx.quadraticCurveTo(s*27,-32,s*27,-12);
+      ctx.quadraticCurveTo(s*21,-14,s*13,-15); ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
+    ctx.fillStyle = '#F0EAD8';
+    ctx.beginPath(); ctx.moveTo(-4,-22); ctx.lineTo(0,-34); ctx.lineTo(4,-22); ctx.closePath(); ctx.fill();
+    return {iris:'#6a4a1e', lid:'#3A2612', limb:'#8A6234'};
+  },
+
+  /* Tuscaloosa: Big Al, an elephant in fan ears and a trunk */
+  tuscaloosa(t, aim){
+    mascotTail('#6E7278', '#2A2C30');
+    mascotFeet('#6E7278', '#2A2C30');
+    mascotBody('#B4B8BE', '#9BA0A8', '#2A2C30');
+    /* the ears, big enough to read from the stands */
+    ctx.fillStyle = mix('#9BA0A8','#000000',.1); ctx.strokeStyle = '#2A2C30'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(-27,-2,13,17,-.3,0,Math.PI*2);
+    ctx.ellipse(27,-2,13,17,.3,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(158,27,50,.35)';
+    ctx.beginPath(); ctx.ellipse(-27,-2,8,11,-.3,0,Math.PI*2);
+    ctx.ellipse(27,-2,8,11,.3,0,Math.PI*2); ctx.fill();
+    /* trunk, curling down past the chin */
+    ctx.strokeStyle = mix('#9BA0A8','#000000',.12); ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-3,10); ctx.quadraticCurveTo(6,20,4,30);
+    ctx.quadraticCurveTo(2,36,8,36);
+    ctx.stroke();
+    /* small tusks either side of the trunk */
+    ctx.strokeStyle = '#F0EEE8'; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-7,13); ctx.quadraticCurveTo(-12,19,-9,23);
+    ctx.stroke();
+    return {iris:'#3a3630', lid:'#2A2C30', limb:'#9BA0A8'};
+  },
+};
+
+/* Dispatches to the player's chosen team's mascot — LSU keeps its own
+   bespoke drawTiger; the other fifteen share the rig above. Each
+   species function paints everything but the eyes, arm and collar,
+   which stay identical across teams so every mascot throws the same
+   way, and returns the few colours those shared pieces need. */
+function drawMascot(x, y, t, target, winding){
+  const draw = MASCOT_DRAW[myTeam];
+  if (!draw){ drawTiger(x, y, t, target, winding); return; }
+  const breathe = Math.sin(t*1.9)*1.4;
+  const aim = Math.atan2(target.y - (y-10), target.x - (x+26));
+  ctx.save();
+  ctx.translate(x, y + breathe);
+  const crouch = winding ? .93 : 1;
+  ctx.scale(1, crouch);
+  const cfg = draw(t, aim) || {};
+  const look = Math.max(-2.2, Math.min(2.2, Math.cos(aim)*2.2));
+  mascotEyes(look, cfg.iris || '#1d7a3f', cfg.lid || '#2a1608');
+  mascotArm(aim, cfg.limb || '#8a8f9c', cfg.paw || '#fff4e2');
+  mascotCollar(THEMES[myTeam].accent);
   ctx.restore();
 }
 
@@ -4422,7 +5030,11 @@ function drawBlock(b){
    headgear, never by a logo. Some kits also reshape the face, so the muzzle pass
    runs after the eyes and can take over the mouth. */
 function drawGrump(b){
-  const p = b.plugin, t = theme(), g = t.grump;
+  const p = b.plugin, t = theme();
+  /* the finale is played at home - schedule[last] is myTeam so the sky, hills and
+     venue name all read as home turf - but the defenders you're actually playing
+     are your rival, not a mirror of yourself, so their kit is swapped in here alone */
+  const g = (level === LEVELS.length-1) ? THEMES[RIVAL[myTeam]].grump : t.grump;
   const now = performance.now();
   const since = now - (p.hurt||0);
   const flash = since < 140;
@@ -4838,6 +5450,34 @@ function drawHat(kit, g){
       ctx.fillRect(4,-27.5,13,1.4); ctx.fillRect(4,-24.5,9,1.4);
       ctx.restore();
       break;
+
+    /* Baton Rouge: an orange tiger face (the grump's own body color) with
+       purple ears and purple stripes - the purple reads clearly against orange
+       where it washed out against a purple face */
+    case 'tigerpaint': {
+      const purple = '#461D7C', purpleDk = '#2E1245';
+      ctx.fillStyle = purple; ctx.strokeStyle = purpleDk; ctx.lineWidth = 2;
+      [-15,15].forEach(ex=>{
+        ctx.beginPath(); ctx.moveTo(ex-9,-19); ctx.quadraticCurveTo(ex,-36,ex+9,-19);
+        ctx.quadraticCurveTo(ex,-23,ex-9,-19); ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+      ctx.fillStyle = purpleDk;
+      [-15,15].forEach(ex=>{
+        ctx.beginPath(); ctx.moveTo(ex-4,-22); ctx.quadraticCurveTo(ex,-32,ex+4,-22);
+        ctx.closePath(); ctx.fill();
+      });
+      ctx.strokeStyle = purple; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      [[-9,-19,-5,-25],[0,-21,0,-27],[9,-19,5,-25]].forEach(v=>{
+        ctx.beginPath(); ctx.moveTo(v[0],v[1]); ctx.lineTo(v[2],v[3]); ctx.stroke();
+      });
+      ctx.lineWidth = 3.2;
+      [-1,1].forEach(s=>{
+        [[16,-6,24,2],[15,3,25,10],[13,12,23,18]].forEach(([x1,y1,x2,y2])=>{
+          ctx.beginPath(); ctx.moveTo(s*x1,y1); ctx.lineTo(s*x2,y2); ctx.stroke();
+        });
+      });
+      break;
+    }
   }
 }
 
@@ -5187,7 +5827,7 @@ function frame(now){
     if (activeShot) pushTrail(activeShot);
     tickTurn(dt);
   }
-  if (phase === 'play' && themeKey() === 'scar'){
+  if (phase === 'play' && themeKey() === 'columbiasc'){
     gustNext -= dt/1000;
     if (gustNext <= 0){ gust = 3.2; gustNext = 17 + Math.random()*13; SFX.gust(); }
     if (gust > 0) gust -= dt/1000;
