@@ -3755,7 +3755,7 @@ function drawSky(){
   const hz = ctx.createLinearGradient(0, 470, 0, 640);
   hz.addColorStop(0, 'rgba(255,255,255,0)');
   hz.addColorStop(1, 'rgba(255,240,210,.10)');
-  ctx.fillStyle = hz; ctx.fillRect(0, 470, W, 170);
+  ctx.fillStyle = hz; ctx.fillRect(-BLEED, 470, W+BLEED*2, 170);
   /* third, farthest ridge for depth */
   hill(mix(t.hills[0], '#8f7fb8', .35), 600, 170);
   drawProps();
@@ -3767,7 +3767,7 @@ function drawSky(){
   const haze = ctx.createLinearGradient(0, 520, 0, GROUND_Y);
   haze.addColorStop(0, 'rgba(0,0,0,0)');
   haze.addColorStop(1, 'rgba(0,0,0,.28)');
-  ctx.fillStyle = haze; ctx.fillRect(0, 520, W, GROUND_Y-520);
+  ctx.fillStyle = haze; ctx.fillRect(-BLEED, 520, W+BLEED*2, GROUND_Y-520);
 }
 
 function drawVignette(){
@@ -3777,10 +3777,13 @@ function drawVignette(){
   ctx.fillStyle = g; ctx.fillRect(-BLEED,-BLEED,W+BLEED*2,H+BLEED*2);
 }
 function hill(color, baseY, amp){
+  /* Extends BLEED past each edge (ridge line included, via the same sine) so a
+     shake offset never slides the canvas past where this layer stops covering —
+     see the BLEED comment near the top of the file. */
   ctx.fillStyle = color;
-  ctx.beginPath(); ctx.moveTo(0, baseY);
-  for (let x=0;x<=W;x+=40) ctx.lineTo(x, baseY - Math.sin(x/230 + amp)*amp*.55 - amp*.35);
-  ctx.lineTo(W, GROUND_Y+10); ctx.lineTo(0, GROUND_Y+10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-BLEED, baseY - Math.sin(-BLEED/230 + amp)*amp*.55 - amp*.35);
+  for (let x=-BLEED;x<=W+BLEED;x+=40) ctx.lineTo(x, baseY - Math.sin(x/230 + amp)*amp*.55 - amp*.35);
+  ctx.lineTo(W+BLEED, GROUND_Y+10); ctx.lineTo(-BLEED, GROUND_Y+10); ctx.closePath(); ctx.fill();
 }
 
 /* Props that belong in front of the hills. Drawn after them so they are not buried. */
@@ -3795,7 +3798,7 @@ function drawPropsFore(){
       ctx.strokeStyle = 'rgba(238,240,244,.88)'; ctx.lineWidth = 4;
       for (let k=0;k<4;k++){
         const y = 664 + k*15;
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-BLEED, y); ctx.lineTo(W+BLEED, y); ctx.stroke();
       }
       ctx.strokeStyle = 'rgba(226,230,238,.92)'; ctx.lineWidth = 7;
       props.filter(p=>p.kind==='post').forEach(p=>{
@@ -3811,7 +3814,7 @@ function drawPropsFore(){
       hg.addColorStop(.5,'#1e4224');
       hg.addColorStop(1,'#0e2314');
       ctx.fillStyle = hg;
-      ctx.fillRect(0, 652, W, 74);
+      ctx.fillRect(-BLEED, 652, W+BLEED*2, 74);
       ctx.fillStyle = 'rgba(90,150,86,.5)';
       props.filter(p=>p.kind==='hedge').forEach(p=>{
         ctx.beginPath(); ctx.arc(p.x, 654, 13*p.s, Math.PI, 0); ctx.fill();
@@ -3857,7 +3860,7 @@ function drawPropsFore(){
       const gl = ctx.createLinearGradient(0, 690, 0, 726);
       gl.addColorStop(0,'rgba(253,208,35,0)');
       gl.addColorStop(1,'rgba(253,208,35,.10)');
-      ctx.fillStyle = gl; ctx.fillRect(0, 690, W, 36);
+      ctx.fillStyle = gl; ctx.fillRect(-BLEED, 690, W+BLEED*2, 36);
       break;
     }
   }
