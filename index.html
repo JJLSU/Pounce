@@ -10,6 +10,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
 <style>
   :root{--ink:#0e0718;--prism:#5fe3c6;--gold:#ffd166;
+        /* --gold is reassigned to the team accent on every level, so anything in
+           the surround that must stay gold reads this instead. Without it the
+           frame sparkles took the away team's colour and blinked light blue. */
+        --frame-gold:#ffd166;
         --sl:env(safe-area-inset-left,0px);  --sr:env(safe-area-inset-right,0px);
         --st:env(safe-area-inset-top,0px);   --sb:env(safe-area-inset-bottom,0px);
         /* breathing room so nothing interactive sits against a screen edge or an
@@ -46,7 +50,7 @@
           radial-gradient(92% 70% at 50% 50%, transparent 30%, rgba(0,0,0,.86) 100%)}
   .spark{position:absolute;border-radius:50%;background:#fff;
          animation:tw var(--d) ease-in-out infinite alternate;opacity:.25}
-  .spark.gold{background:var(--gold)}
+  .spark.gold{background:var(--frame-gold)}
   @keyframes tw{from{opacity:.10;transform:scale(.7)}to{opacity:.85;transform:scale(1.15)}}
   #stage{position:relative;z-index:1;aspect-ratio:7/4;touch-action:none;
          /* --fit pulls the play area in from the edges so the frame has real presence
@@ -292,6 +296,11 @@ const {Engine, World, Bodies, Body, Composite, Events, Vector, Sleeping} = Matte
 
 /* ---------- world + integrator constants (matched to Matter at delta 16.666) ---------- */
 const W = 1400, H = 800, GROUND_Y = 726;
+/* Impact shake translates the whole scene by up to half the shake amplitude, so
+   the background layers are painted past the canvas edge by this much. Without
+   it the shifted frame leaves an unpainted strip and the surround flashes
+   through at the border. Shake is capped at 17, giving a worst case of 8.5. */
+const BLEED = 26;
 const ANCHOR = {x: 205, y: 545};
 const MAX_PULL = 135;
 const LAUNCH = .215, GRAV = 0.2778, AIR = 0.99;
@@ -1287,7 +1296,15 @@ window.addEventListener('touchcancel', up);
    outside and coming back would otherwise leave the bird glued to the cursor. */
 window.addEventListener('blur', up);
 window.addEventListener('keydown', e=>{
-  if (e.code === 'Space'){ e.preventDefault(); firePower(); }
+  if (e.code === 'Space'){
+    /* Space is the fire button during a shot, but it is also how a keyboard
+       player activates a focused button. Swallowing it everywhere left the
+       cards reachable by Tab and impossible to press with anything but Enter. */
+    const onControl = e.target instanceof Element &&
+                      e.target.closest('button, a, [role="button"]');
+    if (phase !== 'play' && onControl) return;
+    e.preventDefault(); firePower();
+  }
   if (e.code === 'KeyR' && phase === 'play') loadLevel(level);
 });
 
@@ -1366,7 +1383,11 @@ function finish(won){
   if (champ){ shake = Math.max(shake, 10); for (let i=0;i<9;i++) setTimeout(()=>SFX.pop(), i*230); }
 
   const t = theme(), card = document.getElementById('card');
-  const words = L.name.split(' ');
+  /* Level names carry a state suffix ("Starkville, MS"), which must not leak into
+     the headline: splitting the whole string on spaces would emphasise the
+     abbreviation and turn the one-star card into "Survived MS". */
+  const city = L.name.split(',')[0].trim();
+  const words = city.split(' ');
   const recLine = `Season record <b style="color:${t.accent}">${wins}&ndash;${losses}</b>`;
   const nextBtn = level < LEVELS.length-1 ? 'Next stadium' : 'Back to the schedule';
 
@@ -1414,7 +1435,7 @@ function finish(won){
   } else if (won){
     card.innerHTML = `
       <div class="eyebrow" style="color:${t.accent}">One star &mdash; that goes down as a loss</div>
-      <h1>Survived <em>${words.slice(-1)}</em></h1>
+      <h1>Survived <em>${city}</em></h1>
       <div class="stars">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</div>
       <p>You cleared the board on your last football. Two stars or better wins the game.
          ${recLine}.</p>
@@ -1621,7 +1642,7 @@ function buildScenery(){
     for (let i=0;i<7;i++) props.push({kind:'palm', x:90+i*205+R()*70, s:.6+R()*.55, p:R()*6.28});
   }
   if (kind === 'liveoaks'){
-    props.push({kind:'lyceum', x:1080, s:1});
+    props.push({kind:'pavilion', x:1080, s:1});
     for (let i=0;i<6;i++) props.push({kind:'oak', x:110+i*230+R()*70, s:.7+R()*.5, p:R()*6.28});
     for (let i=0;i<16;i++) props.push({kind:'tent', x:40+i*88+R()*26, s:.75+R()*.4, red:R()<.5});
   }
@@ -1882,9 +1903,9 @@ function drawProps(){
       break;
     }
 
-    /* ---- Oxford: the Grove, tents and oaks ---- */
+    /* ---- Oxford: tailgate tents under the oaks ---- */
     case 'liveoaks': {
-      props.filter(p=>p.kind==='lyceum').forEach(p=>{
+      props.filter(p=>p.kind==='pavilion').forEach(p=>{
         const s = p.s;
         ctx.fillStyle = 'rgba(220,214,200,.88)';
         ctx.fillRect(p.x-120*s, 468, 240*s, 168);
@@ -3693,7 +3714,7 @@ function drawSky(){
   const t = theme();
   const g = ctx.createLinearGradient(0,0,0,GROUND_Y);
   t.sky.forEach(([s,c])=>g.addColorStop(s,c));
-  ctx.fillStyle = g; ctx.fillRect(0,0,W,GROUND_Y);
+  ctx.fillStyle = g; ctx.fillRect(-BLEED,-BLEED,W+BLEED*2,GROUND_Y+BLEED);
 
   const now = performance.now()/1000;
   ctx.fillStyle = '#fff';
@@ -3753,7 +3774,7 @@ function drawVignette(){
   const g = ctx.createRadialGradient(W/2, H*.46, H*.34, W/2, H*.46, H*.95);
   g.addColorStop(0, 'rgba(0,0,0,0)');
   g.addColorStop(1, 'rgba(0,0,0,.42)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = g; ctx.fillRect(-BLEED,-BLEED,W+BLEED*2,H+BLEED*2);
 }
 function hill(color, baseY, amp){
   ctx.fillStyle = color;
@@ -3852,24 +3873,25 @@ function drawGround(){
   const gg = ctx.createLinearGradient(0, GROUND_Y, 0, H);
   gg.addColorStop(0, mix(base, '#ffffff', .16));
   gg.addColorStop(1, mix(base, '#000000', .48));
-  ctx.fillStyle = gg; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = gg; ctx.fillRect(-BLEED, GROUND_Y, W+BLEED*2, H - GROUND_Y + BLEED);
 
   /* mower stripes running with the yard lines */
   ctx.fillStyle = 'rgba(255,255,255,.035)';
-  for (let x = -52; x < W; x += 104) ctx.fillRect(x, GROUND_Y, 52, H - GROUND_Y);
+  for (let x = -52-BLEED; x < W+BLEED; x += 104)
+    ctx.fillRect(x, GROUND_Y, 52, H - GROUND_Y + BLEED);
 
   /* the home end zone sits behind the goalpost, painted in the away team's colour
      because this is their house on every level but the last */
   const ez = ctx.createLinearGradient(0, GROUND_Y, 0, H);
   ez.addColorStop(0, mix(t.accent, '#000000', .52));
   ez.addColorStop(1, mix(t.accent, '#000000', .74));
-  ctx.fillStyle = ez; ctx.fillRect(0, GROUND_Y, 272, H - GROUND_Y);
+  ctx.fillStyle = ez; ctx.fillRect(-BLEED, GROUND_Y, 272+BLEED, H - GROUND_Y + BLEED);
   ctx.fillStyle = 'rgba(255,255,255,.42)';
-  ctx.fillRect(268, GROUND_Y, 4, H - GROUND_Y);
+  ctx.fillRect(268, GROUND_Y, 4, H - GROUND_Y + BLEED);
 
   /* sideline */
   ctx.fillStyle = 'rgba(255,255,255,.5)';
-  ctx.fillRect(0, GROUND_Y + 3, W, 3);
+  ctx.fillRect(-BLEED, GROUND_Y + 3, W+BLEED*2, 3);
 
   /* yard lines, hash marks and numbers */
   ctx.font = '800 13px Outfit, sans-serif';
