@@ -21,6 +21,14 @@ class UploadTooLargeError(Exception):
     pass
 
 
+class MissingContentLengthError(Exception):
+    pass
+
+
+class InvalidUploadBodyError(Exception):
+    pass
+
+
 def normalize_filename(filename: str) -> str:
     candidate = Path(filename).name
     stem = SAFE_NAME_RE.sub("-", Path(candidate).stem).strip(".-") or "game"
@@ -61,6 +69,12 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         except UploadTooLargeError:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "HTML file is too large")
             return
+        except MissingContentLengthError:
+            self.send_error(HTTPStatus.LENGTH_REQUIRED, "Content-Length header is required")
+            return
+        except InvalidUploadBodyError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid upload body")
+            return
 
         if uploaded_file is None:
             self.send_error(HTTPStatus.BAD_REQUEST, "Missing game file")
@@ -81,12 +95,12 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 
     @property
     def upload_dir(self) -> Path:
-        return getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR)
+        return getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR.resolve())
 
     def _parse_uploaded_file(self, content_type: str) -> tuple[str, bytes] | None:
         raw_content_length = self.headers.get("Content-Length")
         if raw_content_length is None:
-            return None
+            raise MissingContentLengthError
         content_length = int(raw_content_length)
         if content_length <= 0:
             return None
@@ -94,8 +108,8 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             raise UploadTooLargeError
 
         body = self.rfile.read(content_length)
-        if len(body) != content_length or len(body) > self.max_upload_size:
-            return None
+        if len(body) != content_length:
+            raise InvalidUploadBodyError
 
         message = BytesParser(policy=default).parsebytes(
             (
@@ -159,7 +173,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             return None
 
         if (
-            resolved_target.parent != self.upload_dir.resolve()
+            resolved_target.parent != self.upload_dir
             or resolved_target.suffix.lower() not in {".html", ".htm"}
         ):
             return None
@@ -197,7 +211,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000, upload_dir: Path | 
 def main() -> None:
     host = os.environ.get("POUNCE_HOST", "127.0.0.1")
     port = int(os.environ.get("POUNCE_PORT", "8000"))
-    upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", DEFAULT_UPLOAD_DIR))
+    upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", str(DEFAULT_UPLOAD_DIR)))
     server = create_server(host=host, port=port, upload_dir=upload_dir)
     if host == "0.0.0.0":
         browser_host = "127.0.0.1"
