@@ -1186,6 +1186,9 @@ function down(e){
 }
 function move(e){
   if (!dragging || !held) return;
+  /* If the button was released off-window, no mouseup ever reached the page. The
+     first move back inside reports no buttons down, which is where we catch it. */
+  if (e.buttons === 0){ up(); return; }
   const p = toWorld(e);
   let d = Vector.sub(p, ANCHOR);
   if (Vector.magnitude(d) > MAX_PULL) d = Vector.mult(Vector.normalise(d), MAX_PULL);
@@ -1208,12 +1211,20 @@ function up(){
   document.getElementById('phint').textContent = currentPower.hint;
   updateHUD();
 }
+/* The drag starts on the canvas but is tracked on the window. Once a pull is in
+   progress the cursor is free to cross the border, or leave the page entirely, and
+   the slingshot keeps following it. toWorld() maps any screen point into game space,
+   and MAX_PULL clamps whatever comes back, so out-of-bounds coordinates are safe. */
 canvas.addEventListener('mousedown', down);
-canvas.addEventListener('mousemove', move);
+window.addEventListener('mousemove', move);
 window.addEventListener('mouseup', up);
 canvas.addEventListener('touchstart', down, {passive:false});
-canvas.addEventListener('touchmove', move, {passive:false});
+window.addEventListener('touchmove', move, {passive:false});
 window.addEventListener('touchend', up);
+window.addEventListener('touchcancel', up);
+/* A drag that ends off-window never fires mouseup on the page. Releasing the button
+   outside and coming back would otherwise leave the bird glued to the cursor. */
+window.addEventListener('blur', up);
 window.addEventListener('keydown', e=>{
   if (e.code === 'Space'){ e.preventDefault(); firePower(); }
   if (e.code === 'KeyR' && phase === 'play') loadLevel(level);
