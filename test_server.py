@@ -1,4 +1,5 @@
 import http.client
+import os
 import tempfile
 import threading
 import unittest
@@ -79,6 +80,17 @@ class ServerTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status, 400)
+
+    @unittest.skipIf(os.name == "nt", "symlink permissions vary on Windows")
+    def test_server_does_not_follow_symlinked_html_files(self) -> None:
+        external_file = self.upload_dir.parent / "outside.html"
+        external_file.write_text("<html>outside</html>", encoding="utf-8")
+        symlink_path = self.upload_dir / "linked.html"
+        symlink_path.symlink_to(external_file)
+
+        response, _ = self.request("GET", "/games/linked.html")
+
+        self.assertEqual(response.status, 404)
 
 
 if __name__ == "__main__":

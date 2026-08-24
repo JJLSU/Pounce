@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import html
-import io
 import os
 import re
-import shutil
-from cgi import FieldStorage
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote
 from uuid import uuid4
+from email.parser import BytesParser
+from email.policy import default
 
 
 DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parent / "uploaded_games"
@@ -48,28 +47,19 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Expected multipart/form-data")
             return
 
-        form = FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={
-                "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE": content_type,
-            },
-        )
-        uploaded_file = form["game"] if "game" in form else None
-        if uploaded_file is None or not getattr(uploaded_file, "filename", ""):
+        uploaded_file = self._parse_uploaded_file(content_type)
+        if uploaded_file is None:
             self.send_error(HTTPStatus.BAD_REQUEST, "Missing game file")
             return
 
-        original_name = uploaded_file.filename
+        original_name, file_contents = uploaded_file
         if Path(original_name).suffix.lower() not in {".html", ".htm"}:
             self.send_error(HTTPStatus.BAD_REQUEST, "Only HTML files are supported")
             return
 
         target_name = normalize_filename(original_name)
         target_path = self.upload_dir / target_name
-        with target_path.open("wb") as destination:
-            shutil.copyfileobj(uploaded_file.file, destination)
+        target_path.write_bytes(file_contents)
 
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", f"/games/{target_name}")
@@ -77,9 +67,32 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 
     @property
     def upload_dir(self) -> Path:
-        directory = getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR)
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory
+        return getattr(self.server, "upload_dir", DEFAULT_UPLOAD_DIR)
+
+    def _parse_uploaded_file(self, content_type: str) -> tuple[str, bytes] | None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length <= 0:
+            return None
+
+        message = BytesParser(policy=default).parsebytes(
+            (
+                f"Content-Type: {content_type}\r\n"
+                "MIME-Version: 1.0\r\n\r\n"
+            ).encode("utf-8")
+            + self.rfile.read(content_length)
+        )
+        if not message.is_multipart():
+            return None
+
+        for part in message.iter_parts():
+            if part.get_param("name", header="content-disposition") != "game":
+                continue
+            filename = part.get_filename()
+            if not filename:
+                return None
+            return filename, part.get_payload(decode=True) or b""
+
+        return None
 
     def _serve_index(self) -> None:
         games = sorted(self.upload_dir.glob("*.htm*"))
@@ -118,11 +131,20 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             return
 
         target_path = self.upload_dir / filename
-        if not target_path.is_file() or target_path.suffix.lower() not in {".html", ".htm"}:
+        try:
+            resolved_target = target_path.resolve(strict=True)
+        except FileNotFoundError:
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
 
-        body = target_path.read_bytes()
+        if (
+            resolved_target.parent != self.upload_dir.resolve()
+            or target_path.suffix.lower() not in {".html", ".htm"}
+        ):
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+
+        body = resolved_target.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -133,6 +155,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 def create_server(host: str = "127.0.0.1", port: int = 8000, upload_dir: Path | None = None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), GameRequestHandler)
     server.upload_dir = upload_dir or DEFAULT_UPLOAD_DIR
+    server.upload_dir.mkdir(parents=True, exist_ok=True)
     return server
 
 
@@ -141,7 +164,7 @@ def main() -> None:
     port = int(os.environ.get("POUNCE_PORT", "8000"))
     upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", DEFAULT_UPLOAD_DIR))
     server = create_server(host=host, port=port, upload_dir=upload_dir)
-    print(f"Serving uploaded games on http://{host}:{port}")
+    print(f"Serving uploaded games on http://127.0.0.1:{port}")
     server.serve_forever()
 
 
