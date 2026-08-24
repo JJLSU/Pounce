@@ -14,6 +14,11 @@ from email.policy import default
 
 DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parent / "uploaded_games"
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+
+
+class UploadTooLargeError(Exception):
+    pass
 
 
 def normalize_filename(filename: str) -> str:
@@ -47,7 +52,12 @@ class GameRequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Expected multipart/form-data")
             return
 
-        uploaded_file = self._parse_uploaded_file(content_type)
+        try:
+            uploaded_file = self._parse_uploaded_file(content_type)
+        except UploadTooLargeError:
+            self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "HTML file is too large")
+            return
+
         if uploaded_file is None:
             self.send_error(HTTPStatus.BAD_REQUEST, "Missing game file")
             return
@@ -73,6 +83,8 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", "0"))
         if content_length <= 0:
             return None
+        if content_length > MAX_UPLOAD_SIZE:
+            raise UploadTooLargeError
 
         message = BytesParser(policy=default).parsebytes(
             (
@@ -95,7 +107,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         return None
 
     def _serve_index(self) -> None:
-        games = sorted(self.upload_dir.glob("*.htm*"))
+        games = sorted([*self.upload_dir.glob("*.html"), *self.upload_dir.glob("*.htm")])
         links = "".join(
             f'<li><a href="/games/{html.escape(game.name)}">{html.escape(game.name)}</a></li>'
             for game in games
@@ -139,7 +151,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 
         if (
             resolved_target.parent != self.upload_dir.resolve()
-            or target_path.suffix.lower() not in {".html", ".htm"}
+            or resolved_target.suffix.lower() not in {".html", ".htm"}
         ):
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
@@ -160,7 +172,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000, upload_dir: Path | 
 
 
 def main() -> None:
-    host = os.environ.get("POUNCE_HOST", "0.0.0.0")
+    host = os.environ.get("POUNCE_HOST", "127.0.0.1")
     port = int(os.environ.get("POUNCE_PORT", "8000"))
     upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", DEFAULT_UPLOAD_DIR))
     server = create_server(host=host, port=port, upload_dir=upload_dir)

@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 from server import create_server
@@ -80,6 +81,22 @@ class ServerTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status, 400)
+
+    def test_upload_rejects_files_over_size_limit(self) -> None:
+        boundary, body = build_multipart("game.html", b"<html>too big</html>")
+
+        with patch("server.MAX_UPLOAD_SIZE", 10):
+            response, _ = self.request(
+                "POST",
+                "/upload",
+                body=body,
+                headers={
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "Content-Length": str(len(body)),
+                },
+            )
+
+        self.assertEqual(response.status, 413)
 
     @unittest.skipIf(os.name == "nt", "symlink permissions vary on Windows")
     def test_server_does_not_follow_symlinked_html_files(self) -> None:
