@@ -31,6 +31,10 @@ def normalize_filename(filename: str) -> str:
 class GameRequestHandler(BaseHTTPRequestHandler):
     server_version = "PounceHTTP/1.0"
 
+    @property
+    def max_upload_size(self) -> int:
+        return getattr(self.server, "max_upload_size", MAX_UPLOAD_SIZE)
+
     def do_GET(self) -> None:
         if self.path == "/":
             self._serve_index()
@@ -83,7 +87,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", "0"))
         if content_length <= 0:
             return None
-        if content_length > MAX_UPLOAD_SIZE:
+        if content_length > self.max_upload_size:
             raise UploadTooLargeError
 
         message = BytesParser(policy=default).parsebytes(
@@ -107,9 +111,13 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         return None
 
     def _serve_index(self) -> None:
-        games = sorted([*self.upload_dir.glob("*.html"), *self.upload_dir.glob("*.htm")])
+        games = sorted(
+            game.name
+            for game in [*self.upload_dir.glob("*.html"), *self.upload_dir.glob("*.htm")]
+            if self._resolve_game_path(game.name) is not None
+        )
         links = "".join(
-            f'<li><a href="/games/{html.escape(game.name)}">{html.escape(game.name)}</a></li>'
+            f'<li><a href="/games/{html.escape(game)}">{html.escape(game)}</a></li>'
             for game in games
         )
         page = f"""<!doctype html>
@@ -136,23 +144,29 @@ class GameRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _resolve_game_path(self, filename: str) -> Path | None:
+        target_path = self.upload_dir / filename
+        try:
+            resolved_target = target_path.resolve(strict=True)
+        except FileNotFoundError:
+            return None
+
+        if (
+            resolved_target.parent != self.upload_dir.resolve()
+            or resolved_target.suffix.lower() not in {".html", ".htm"}
+        ):
+            return None
+
+        return resolved_target
+
     def _serve_game(self) -> None:
         filename = Path(unquote(self.path.removeprefix("/games/"))).name
         if not filename:
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
 
-        target_path = self.upload_dir / filename
-        try:
-            resolved_target = target_path.resolve(strict=True)
-        except FileNotFoundError:
-            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-            return
-
-        if (
-            resolved_target.parent != self.upload_dir.resolve()
-            or resolved_target.suffix.lower() not in {".html", ".htm"}
-        ):
+        resolved_target = self._resolve_game_path(filename)
+        if resolved_target is None:
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
 
@@ -167,6 +181,7 @@ class GameRequestHandler(BaseHTTPRequestHandler):
 def create_server(host: str = "127.0.0.1", port: int = 8000, upload_dir: Path | None = None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), GameRequestHandler)
     server.upload_dir = upload_dir or DEFAULT_UPLOAD_DIR
+    server.max_upload_size = MAX_UPLOAD_SIZE
     server.upload_dir.mkdir(parents=True, exist_ok=True)
     return server
 
@@ -176,7 +191,8 @@ def main() -> None:
     port = int(os.environ.get("POUNCE_PORT", "8000"))
     upload_dir = Path(os.environ.get("POUNCE_UPLOAD_DIR", DEFAULT_UPLOAD_DIR))
     server = create_server(host=host, port=port, upload_dir=upload_dir)
-    print(f"Serving uploaded games on http://127.0.0.1:{port}")
+    browser_host = "127.0.0.1" if host == "0.0.0.0" else host
+    print(f"Serving uploaded games on http://{browser_host}:{port}")
     server.serve_forever()
 
 

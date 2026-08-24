@@ -85,7 +85,7 @@ class ServerTests(unittest.TestCase):
     def test_upload_rejects_files_over_size_limit(self) -> None:
         boundary, body = build_multipart("game.html", b"<html>too big</html>")
 
-        with patch("server.MAX_UPLOAD_SIZE", 10):
+        with patch.object(self.server, "max_upload_size", 10):
             response, _ = self.request(
                 "POST",
                 "/upload",
@@ -108,6 +108,11 @@ class ServerTests(unittest.TestCase):
         response, _ = self.request("GET", "/games/linked.html")
 
         self.assertEqual(response.status, 404)
+
+        response, body = self.request("GET", "/")
+
+        self.assertEqual(response.status, 200)
+        self.assertNotIn(b"linked.html", body)
 
 
 if __name__ == "__main__":
